@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "installCommand": "npm install --legacy-peer-deps && npx prisma generate",
+  "regions": ["sin1"]
+}

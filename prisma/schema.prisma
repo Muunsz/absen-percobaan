@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Account {
+  id                                Int             @id @default(autoincrement())
+  username                          String          @unique
+  password                          String
+  role                              Role
+  id_kelas                          Int?
+  id_mapel                          Int?
+  nama_lengkap                      String?
+  kelas                             kelas?          @relation(fields: [id_kelas], references: [id])
+  mapel                             Mapel?          @relation(fields: [id_mapel], references: [id])
+  agendaKelas                       Agenda_Kelas[]
+  agendaKhusus                      Agenda_Khusus[]
+  jadwal                            Jadwal[]
+  kelas_kelas_id_waliKelasToAccount kelas[]         @relation("kelas_id_waliKelasToAccount")
+}
+
+model Jurusan {
+  id      Int     @id @default(autoincrement())
+  jurusan String  @unique
+  kelas   kelas[]
+}
+
+model Agenda_Kelas {
+  id          Int            @id @default(autoincrement())
+  date        DateTime       @db.Date
+  time_start  DateTime       @db.Time(6)
+  time_end    DateTime       @db.Time(6)
+  id_class    Int
+  id_mapel    Int
+  materi      String?
+  keterangan  String?
+  id_guru     Int
+  doc_path    String?
+  kelas       kelas          @relation(fields: [id_class], references: [id])
+  guru        Account        @relation(fields: [id_guru], references: [id])
+  mapel       Mapel          @relation(fields: [id_mapel], references: [id])
+  rekapAgenda Rekap_Agenda[]
+}
+
+model Agenda_Khusus {
+  id         Int      @id @default(autoincrement())
+  deskripsi  String?
+  date       DateTime @db.Date
+  time_start DateTime @db.Time(6)
+  time_end   DateTime @db.Time(6)
+  materi     String
+  keterangan String?
+  lokasi     String
+  id_guru    Int
+  id_kelas   Int?
+  doc_path   String?
+  guru       Account  @relation(fields: [id_guru], references: [id])
+  kelas      kelas?   @relation(fields: [id_kelas], references: [id])
+}
+
+model Mapel {
+  id          Int            @id @default(autoincrement())
+  mapel       String
+  accounts    Account[]
+  agendaKelas Agenda_Kelas[]
+  jadwal      Jadwal[]
+}
+
+model Jadwal {
+  id            Int      @id @default(autoincrement())
+  hari          String
+  waktu_mulai   DateTime @db.Time(6)
+  waktu_selesai DateTime @db.Time(6)
+  id_class      Int
+  id_mapel      Int
+  id_guru       Int
+  kelas         kelas    @relation(fields: [id_class], references: [id])
+  guru          Account  @relation(fields: [id_guru], references: [id])
+  mapel         Mapel    @relation(fields: [id_mapel], references: [id])
+}
+
+model Siswa {
+  NIS      String    @id @unique
+  Nama     String
+  JK       Gender
+  status   Status
+  id_class Int
+  absensi  Absensi[]
+  kelas    kelas     @relation(fields: [id_class], references: [id])
+}
+
+model Absensi {
+  id         Int      @id @default(autoincrement())
+  id_siswa   String
+  keterangan Absent
+  tanggal    DateTime @db.Date
+  deskripsi  String?
+  id_kelas   Int?
+  kelas      kelas?   @relation(fields: [id_kelas], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  siswa      Siswa    @relation(fields: [id_siswa], references: [NIS])
+}
+
+model Rekap_Agenda {
+  id          Int          @id @default(autoincrement())
+  tanggal     DateTime     @db.Date
+  id_class    Int
+  id_agenda   Int
+  agendaKelas Agenda_Kelas @relation(fields: [id_agenda], references: [id])
+  kelas       kelas        @relation(fields: [id_class], references: [id])
+}
+
+model kelas {
+  id                                  Int             @id(map: "Class_pkey") @default(autoincrement())
+  kelas                               String
+  id_jurusan                          Int
+  id_waliKelas                        Int
+  absensi                             Absensi[]
+  accounts                            Account[]
+  agendaKelas                         Agenda_Kelas[]
+  agendaKhusus                        Agenda_Khusus[]
+  jadwal                              Jadwal[]
+  rekapAgenda                         Rekap_Agenda[]
+  siswa                               Siswa[]
+  Jurusan                             Jurusan         @relation(fields: [id_jurusan], references: [id], map: "Class_id_jurusan_fkey")
+  Account_kelas_id_waliKelasToAccount Account         @relation("kelas_id_waliKelasToAccount", fields: [id_waliKelas], references: [id], map: "Class_id_waliKelas_fkey")
+}
+
+enum Role {
+  ADMIN
+  SEKRETARIS
+  GURU
+  VIEW
+}
+
+enum Status {
+  Aktif
+  NonAktif
+}
+
+enum Gender {
+  L
+  P
+}
+
+enum Absent {
+  HADIR
+  SAKIT
+  IZIN
+  ALPA
+}

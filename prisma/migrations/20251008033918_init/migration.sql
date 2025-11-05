@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Agenda" ALTER COLUMN "title" DROP NOT NULL,
+ALTER COLUMN "desc" DROP NOT NULL;
