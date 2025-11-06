@@ -22,6 +22,7 @@ import {
   UserCircle,
   Settings,
   ChevronDown,
+  Barcode,
   ChevronUp,
 } from "lucide-react";
 import ThemeToggle from "../UI/theme-toggle";
@@ -119,7 +120,7 @@ const Sidebar = ({ children }: { children: React.ReactNode }) => {
         { href: "/admin/siswa", label: "Siswa", icon: Users },
       ],
     },
-    {
+  {
       dropdown: true,
       label: "Manajemen Absensi",
       icon: BarChart3,
@@ -130,6 +131,8 @@ const Sidebar = ({ children }: { children: React.ReactNode }) => {
         { href: "/admin/rekap-absensi", label: "Rekap Absensi", icon: FileText },
         { href: "/admin/agenda-kelas", label: "Agenda Kelas", icon: FileText },
         { href: "/admin/rekap-agenda-kelas", label: "Rekap Agenda Kelas", icon: FileText },
+        // ✅ Menu baru: "Absen Scan" — diperbagus & konsisten
+        { href: "/admin/absenscan", label: "Absen Scan", icon: Barcode },
       ],
     },
     {
@@ -151,6 +154,7 @@ const Sidebar = ({ children }: { children: React.ReactNode }) => {
     if (pathname.includes("/admin/mapel")) return "Manage Mata Pelajaran";
     if (pathname.includes("/admin/siswa")) return "Manage Siswa";
     if (pathname.includes("/admin/absensi")) return "Absensi";
+        if (pathname.includes("/admin/absenscan")) return "Absensi Scan";
     if (pathname.includes("/admin/rekap-absensi")) return "Rekap Absensi";
     if (pathname.includes("/admin/agenda-kelas")) return "Agenda Kelas";
     if (pathname.includes("/admin/rekap-agenda-kelas")) return "Rekap Agenda Kelas";
