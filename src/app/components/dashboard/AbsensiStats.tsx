@@ -3,17 +3,34 @@ import { Absent } from "@prisma/client";
 import Keterangan from "./Keterangan";
 
 export default async function AbsensiStats() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date()
+  const todayLocalString = today.toLocaleDateString('sv-SE')
 
-  const totalSiswa = await prisma.siswa.count({
-    where: { status: "Aktif" },
-  });
+  const startOfDayUTC = new Date(Date.UTC(
+    parseInt(todayLocalString.split('-')[0]),
+    parseInt(todayLocalString.split('-')[1]) - 1,
+    parseInt(todayLocalString.split('-')[2]),
+    0, 0, 0, 0
+  ));
+  const endOfDayUTC = new Date(Date.UTC(
+    parseInt(todayLocalString.split('-')[0]),
+    parseInt(todayLocalString.split('-')[1]) - 1,
+    parseInt(todayLocalString.split('-')[2]) + 1,
+    0, 0, 0, 0
+  ));
 
-  const absensiHarian = await prisma.absensi.findMany({
-    where: { tanggal: today },
-    select: { keterangan: true },
-  });
+  const [totalSiswa, absensiHarian] = await Promise.all([
+    prisma.siswa.count({ where: { status: "Aktif" } }),
+    prisma.absensi.findMany({
+      where: {
+        tanggal: {
+          gte: startOfDayUTC,
+          lt: endOfDayUTC,
+        }
+      },
+      select: { keterangan: true },
+    }),
+  ])
 
   const hadir = absensiHarian.filter(a => a.keterangan === "HADIR").length;
   const sakit = absensiHarian.filter(a => a.keterangan === "SAKIT").length;

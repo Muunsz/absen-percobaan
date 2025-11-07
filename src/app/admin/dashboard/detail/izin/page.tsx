@@ -39,6 +39,7 @@ async function fetchAbsensiIzin(): Promise<Absensi[]> {
 export default function AbsensiIzinPage() {
   const [absensiList, setAbsensiList] = useState<Absensi[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalSiswa, setTotalSiswa] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +49,20 @@ export default function AbsensiIzinPage() {
         setLoading(true);
         const data = await fetchAbsensiIzin();
         setAbsensiList(data);
+        // fetch total siswa
+        try {
+          const res = await fetch('/api/siswa');
+          if (res.ok) {
+            const siswa = await res.json();
+            const aktifCount = Array.isArray(siswa) ? siswa.filter((s: any) => s.status === 'Aktif').length : 0;
+            setTotalSiswa(aktifCount);
+          } else {
+            setTotalSiswa(null);
+          }
+        } catch (err) {
+          console.error('Failed to fetch siswa', err);
+          setTotalSiswa(null);
+        }
         setError(null);
       } catch (err) {
         console.error("Error loading ", err);
@@ -118,7 +133,7 @@ export default function AbsensiIzinPage() {
           </div>
           <div className="bg-white dark:bg-[#1e293b] p-4 rounded-xl shadow border border-gray-200 dark:border-gray-700">
             <p className="text-gray-500 dark:text-gray-400 text-sm">Total Siswa</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">--</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalSiswa ?? '--'}</p>
           </div>
           <div className="bg-white dark:bg-[#1e293b] p-4 rounded-xl shadow border border-gray-200 dark:border-gray-700">
             <p className="text-gray-500 dark:text-gray-400 text-sm">Kelas Terlibat</p>
