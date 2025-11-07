@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +19,7 @@ import {
   Keyboard,
 } from "lucide-react";
 import SiswaCard from "../../components/Absensi/SiswaCard";
+import { format } from "date-fns";
 
 interface SiswaTerpindai {
   nis: string;
@@ -34,16 +34,12 @@ export default function AbsenScanPage() {
   const [scannedStudents, setScannedStudents] = useState<SiswaTerpindai[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [classInfo, setClassInfo] = useState<{ kelas: string; jurusan: string } | null>(null);
-
   const [filterKelas, setFilterKelas] = useState<string | null>(null);
   const [filterJurusan, setFilterJurusan] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -54,76 +50,82 @@ export default function AbsenScanPage() {
     }
   }, [isScanning]);
 
-  const showNotification = useCallback((type: "success" | "warning" | "error", message: string) => {
-    if (type === "success") {
-      setSuccessMessage(message);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } else if (type === "warning") {
-      setWarningMessage(message);
-      setTimeout(() => setWarningMessage(null), 3000);
-    } else {
-      setError(message);
-      setTimeout(() => setError(null), 3000);
-    }
+  // 🔔 Stack Notifikasi (slide-down dari kanan atas)
+  const [notifications, setNotifications] = useState<
+    { id: string; type: "success" | "warning" | "error"; message: string }[]
+  >([]);
+
+  const addNotification = useCallback((type: "success" | "warning" | "error", message: string) => {
+    const id = Math.random().toString(36).slice(2, 9);
+    const newNotification = { id, type, message };
+    setNotifications((prev) => [newNotification, ...prev.slice(0, 4)]); // max 5 notif
+
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }, 4000);
   }, []);
 
-  const processNIS = useCallback(async (nis: string) => {
-    if (!nis.trim()) return;
+  const processNIS = useCallback(
+    async (nis: string) => {
+      if (!nis.trim()) return;
 
-    if (scannedStudents.some(s => s.nis === nis)) {
-      showNotification("warning", "Anda sudah mengabsen siswa ini.");
-      playSound("error");
-      return;
-    }
+      if (scannedStudents.some((s) => s.nis === nis)) {
+        addNotification("warning", "Anda sudah mengabsen siswa ini.");
+        playSound("error");
+        setInputValue("");
+        return;
+      }
 
-    try {
-      setLoading(true);
-      const res = await fetch("/api/absensi/scan/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nis }),
-      });
-
-      const data = await res.json();
-
-      if (data.status === "success") {
-        const newStudent: SiswaTerpindai = {
-          nis: data.data.nis,
-          nama: data.data.nama,
-          kelas: data.data.kelas,
-          jurusan: data.data.jurusan,
-        };
-
-        if (!classInfo) {
-          setClassInfo({
-            kelas: data.data.kelas,
-            jurusan: data.data.jurusan
+      try {
+        setLoading(true);
+          const res = await fetch("/api/absensi/scan/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nis, tanggal: selectedDate }),
           });
+        const data = await res.json();
+
+        if (data.status === "success") {
+          const newStudent: SiswaTerpindai = {
+            nis: data.data.nis,
+            nama: data.data.nama,
+            kelas: data.data.kelas,
+            jurusan: data.data.jurusan,
+          };
+          if (!classInfo) {
+            setClassInfo({
+              kelas: data.data.kelas,
+              jurusan: data.data.jurusan,
+            });
+          }
+          setScannedStudents((prev) => [newStudent, ...prev]);
+          addNotification("success", `✅ Berhasil! ${newStudent.nama} - ${newStudent.kelas} - Hadir.`);
+          playSound("success");
+        } else if (data.status === "warning") {
+          addNotification("warning", data.message);
+          playSound("error");
+        } else {
+          addNotification("error", data.message || "Data tidak ditemukan.");
+          playSound("error");
         }
 
-        setScannedStudents(prev => [newStudent, ...prev]);
-        showNotification("success", `✅ Berhasil! ${newStudent.nama} - ${newStudent.kelas} - Hadir.`);
-        playSound("success");
-      } else if (data.status === "warning") {
-        showNotification("warning", data.message);
+        setInputValue("");
+      } catch (err) {
+        addNotification("error", "Gagal memverifikasi data. Silakan coba lagi.");
         playSound("error");
-      } else {
-        showNotification("error", data.message || "Data tidak ditemukan.");
-        playSound("error");
+        setInputValue("");
+      } finally {
+        setLoading(false);
+        if (isScanning && hiddenInputRef.current) {
+          hiddenInputRef.current.focus();
+        }
       }
-    } catch (err) {
-      showNotification("error", "Gagal memverifikasi data. Silakan coba lagi.");
-      playSound("error");
-    } finally {
-      setLoading(false);
-      setInputValue("");
-      if (isScanning && hiddenInputRef.current) {
-        hiddenInputRef.current.focus();
-      }
-    }
-  }, [classInfo, scannedStudents, showNotification, isScanning]);
+    },
+    [classInfo, scannedStudents, addNotification, isScanning]
+  );
 
-  const handleHiddenInputChange = (e: React.ChangeEvent<HTMLInputElement>) => setInputValue(e.target.value);
+  const handleHiddenInputChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setInputValue(e.target.value);
   const handleHiddenKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && isScanning) {
       const nis = inputValue.trim();
@@ -139,8 +141,8 @@ export default function AbsenScanPage() {
   };
 
   const removeStudent = (nis: string) => {
-    setScannedStudents(prev => {
-      const updated = prev.filter(s => s.nis !== nis);
+    setScannedStudents((prev) => {
+      const updated = prev.filter((s) => s.nis !== nis);
       if (updated.length === 0) setClassInfo(null);
       return updated;
     });
@@ -155,49 +157,80 @@ export default function AbsenScanPage() {
 
   const handleConfirm = async () => {
     if (scannedStudents.length === 0) {
-      showNotification("error", "Belum ada siswa yang dipindai.");
+      addNotification("error", "Belum ada siswa yang dipindai.");
+      return;
+    }
+
+    // ✅ Ambil classId dari data siswa pertama (lebih akurat)
+    const firstStudentClass = scannedStudents[0].kelas;
+    if (!firstStudentClass) {
+      addNotification("error", "Kelas tidak terdeteksi. Pastikan siswa memiliki data kelas.");
       return;
     }
 
     setLoading(true);
     try {
-      const classId = await getClassId(classInfo?.kelas || "");
-      if (!classId) {
-        throw new Error("Kelas tidak ditemukan.");
+      // ✅ Dapatkan classId berdasarkan nama kelas dari siswa pertama
+      const classIdStr = await getClassId(firstStudentClass);
+      if (!classIdStr) {
+        throw new Error("Kelas tidak ditemukan di sistem.");
+      }
+
+      // ✅ Parse ke number secara eksplisit & validasi
+      const classId = Number(classIdStr);
+      if (isNaN(classId) || classId <= 0) {
+        throw new Error("ID Kelas tidak valid. Pastikan nama kelas benar dan terdaftar.");
+      }
+
+      // ✅ Pastikan SEMUA siswa dalam satu kelas yang sama
+      const allSameClass = scannedStudents.every((s) => s.kelas === firstStudentClass);
+      if (!allSameClass) {
+        addNotification("warning", "⚠️ Beberapa siswa berasal dari kelas berbeda. Hanya siswa dari kelas yang sama yang akan diproses.");
+        // Opsional: filter hanya yang sama kelas
+        // scannedStudents = scannedStudents.filter(s => s.kelas === firstStudentClass);
       }
 
       const res = await fetch("/api/absensi/scan/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scannedStudents: scannedStudents.map(s => s.nis),
-          classId,
+          scannedStudents: scannedStudents.map((s) => s.nis), // ✅ NIS string
+          classId, // ✅ number (bukan string!)
+          tanggal: selectedDate, // kirim tanggal yang dipilih
         }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        showNotification("success", `🎉 Konfirmasi berhasil! ${scannedStudents.length} siswa hadir, siswa lain izin otomatis.`);
-        setTimeout(() => {
-          router.push("/admin/absensi");
-        }, 3000);
+        addNotification("success", `🎉 Konfirmasi berhasil! ${scannedStudents.length} siswa hadir.`);
+        setTimeout(() => router.push("/admin/absensi"), 2500);
       } else {
-        showNotification("error", data.message || "Gagal menyimpan absensi.");
+        const errorMsg = data.message || `Gagal menyimpan (Status ${res.status})`;
+        addNotification("error", `❌ ${errorMsg}`);
       }
     } catch (err) {
-      showNotification("error", "Gagal menyimpan absensi. Silakan coba lagi.");
+      const message = (err as Error).message || "Gagal menyimpan absensi. Silakan coba lagi.";
+      addNotification("error", `⚠️ ${message}`);
+      console.error("[Confirm Error]", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const getClassId = async (className: string) => {
+  const getClassId = async (className: string): Promise<string | null> => {
     try {
       const res = await fetch(`/api/absensi/class?nama=${encodeURIComponent(className)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn("getClassId failed", res.status, err);
+        return null;
+      }
       const data = await res.json();
-      return data.id;
-    } catch {
+      // ✅ Kembalikan sebagai string untuk diparse di caller
+      return data.id != null ? String(data.id) : null;
+    } catch (err) {
+      console.error("Error fetching class ID:", err);
       return null;
     }
   };
@@ -207,7 +240,7 @@ export default function AbsenScanPage() {
     audio.play().catch(() => {});
   };
 
-  // 🔹 Panel Scan - Tanpa gradasi, UI bersih
+  // 🔹 Panel Scan
   const ScanPanel = () => (
     <div className="rounded-2xl p-6 mb-6 shadow-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
       <div className="flex justify-between items-center mb-5">
@@ -225,7 +258,6 @@ export default function AbsenScanPage() {
           <span>Stop Scan</span>
         </button>
       </div>
-
       <input
         ref={hiddenInputRef}
         type="text"
@@ -237,7 +269,6 @@ export default function AbsenScanPage() {
         tabIndex={-1}
         aria-hidden="true"
       />
-
       {/* Area Visual */}
       <div className="relative bg-blue-50 dark:bg-blue-900/10 rounded-xl p-6 text-center mb-5 border-2 border-dashed border-blue-400 dark:border-blue-600/50">
         <div className="w-16 h-16 mx-auto mb-4 relative">
@@ -250,8 +281,7 @@ export default function AbsenScanPage() {
         </p>
         <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-blue-50 dark:bg-blue-900/10 rotate-45 border-l border-b border-blue-400 dark:border-blue-600/50"></div>
       </div>
-
-      {/* Input Manual - Diperbagus */}
+      {/* Input Manual */}
       <div className="text-center mb-5">
         <button
           onClick={() => setShowManualInput(!showManualInput)}
@@ -261,16 +291,14 @@ export default function AbsenScanPage() {
           {showManualInput ? "Sembunyikan input manual" : "Masukkan NIS manual"}
         </button>
       </div>
-
-      {/* Input Manual - Diperbagus dengan margin bawah */}
-        {showManualInput && (
-        <div className="mt-5 mb-4 animate-fade-in"> {/* <-- Tambahkan mb-4 di sini */}
-            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+      {showManualInput && (
+        <div className="mt-5 mb-4 animate-fade-in">
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
             <label htmlFor="manual-nis" className="block text-sm font-semibold mb-2 text-gray-800 dark:text-gray-200">
-                Masukkan NIS Siswa Secara Manual
+              Masukkan NIS Siswa Secara Manual
             </label>
             <div className="flex gap-3">
-                <input
+              <input
                 id="manual-nis"
                 ref={manualInputRef}
                 type="text"
@@ -278,33 +306,31 @@ export default function AbsenScanPage() {
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder="Ketik NIS..."
                 className="flex-1 h-11 px-4 py-2.5 rounded-xl bg-white text-gray-900 border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
-                />
-                <button
+              />
+              <button
                 onClick={handleManualSubmit}
                 disabled={loading || !inputValue.trim()}
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-60"
-                >
+              >
                 Tambah
-                </button>
+              </button>
             </div>
-            </div>
+          </div>
         </div>
-        )}
-
-        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
+      )}
+      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
         <strong>💡 Tips:</strong> Scanner harus mengirim NIS + Enter secara otomatis.
-        </div>
+      </div>
     </div>
   );
 
-  const uniqueKelas = [...new Set(scannedStudents.map(s => s.kelas))];
-  const uniqueJurusan = [...new Set(scannedStudents.map(s => s.jurusan))];
-
-  const filteredAndSearched = scannedStudents.filter(student => {
+  const uniqueKelas = [...new Set(scannedStudents.map((s) => s.kelas))];
+  const uniqueJurusan = [...new Set(scannedStudents.map((s) => s.jurusan))];
+  const filteredAndSearched = scannedStudents.filter((student) => {
     const matchesKelas = !filterKelas || student.kelas === filterKelas;
     const matchesJurusan = !filterJurusan || student.jurusan === filterJurusan;
-    const matchesSearch = student.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          student.nis.includes(searchTerm);
+    const matchesSearch =
+      student.nama.toLowerCase().includes(searchTerm.toLowerCase()) || student.nis.includes(searchTerm);
     return matchesKelas && matchesJurusan && matchesSearch;
   });
 
@@ -326,8 +352,21 @@ export default function AbsenScanPage() {
           </div>
         </header>
 
-        {!isScanning ? (
-          <div className="mb-6 flex justify-center">
+        {/* Date picker & Mulai Scan */}
+        {!isScanning && (
+          <div className="mb-6 flex flex-col sm:flex-row justify-center items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="tanggal-absen" className="font-medium text-gray-700 dark:text-gray-200">
+                Tanggal Absensi:
+              </label>
+              <input
+                id="tanggal-absen"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
             <button
               onClick={() => setIsScanning(true)}
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-2 transition-colors duration-300 shadow-lg"
@@ -336,9 +375,10 @@ export default function AbsenScanPage() {
               Mulai Scan
             </button>
           </div>
-        ) : (
-          <ScanPanel />
         )}
+
+        {/* ScanPanel tetap seperti sebelumnya, tanpa date picker */}
+        {isScanning ? <ScanPanel /> : null}
 
         {/* Filter & Search */}
         {scannedStudents.length > 0 && (
@@ -351,23 +391,25 @@ export default function AbsenScanPage() {
                   className="h-11 px-4 rounded-xl text-sm border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Semua Kelas</option>
-                  {uniqueKelas.map(k => (
-                    <option key={k} value={k}>{k}</option>
+                  {uniqueKelas.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
                   ))}
                 </select>
-
                 <select
                   value={filterJurusan || ""}
                   onChange={(e) => setFilterJurusan(e.target.value || null)}
                   className="h-11 px-4 rounded-xl text-sm border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Semua Jurusan</option>
-                  {uniqueJurusan.map(j => (
-                    <option key={j} value={j}>{j}</option>
+                  {uniqueJurusan.map((j) => (
+                    <option key={j} value={j}>
+                      {j}
+                    </option>
                   ))}
                 </select>
               </div>
-
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div className="relative flex-1">
                   <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -379,7 +421,6 @@ export default function AbsenScanPage() {
                     className="w-full h-11 pl-11 pr-4 rounded-xl text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-
                 <div className="flex gap-2">
                   <button
                     onClick={() => setViewMode("list")}
@@ -422,7 +463,6 @@ export default function AbsenScanPage() {
               </button>
             )}
           </div>
-
           {filteredAndSearched.length === 0 ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white rounded-2xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
               <div className="w-16 h-16 mx-auto mb-4 opacity-60">
@@ -434,14 +474,19 @@ export default function AbsenScanPage() {
             <div className="rounded-2xl shadow overflow-hidden bg-white border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
               <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredAndSearched.map((student, index) => (
-                  <li key={student.nis} className="p-5 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center justify-between transition-colors">
+                  <li
+                    key={student.nis}
+                    className="p-5 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center justify-between transition-colors"
+                  >
                     <div className="flex items-center gap-4 min-w-0">
                       <span className="text-sm font-bold w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-full">
                         {index + 1}
                       </span>
                       <div className="flex-grow min-w-0">
                         <div className="font-semibold text-gray-900 dark:text-white truncate">{student.nama}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400 truncate">{student.kelas} • {student.jurusan}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                          {student.kelas} • {student.jurusan}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -499,25 +544,28 @@ export default function AbsenScanPage() {
           </button>
         </div>
 
-        {/* Notifikasi Toast */}
-        {successMessage && (
-          <div className="fixed bottom-6 right-6 bg-green-500 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center gap-3 animate-fade-in z-50">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-medium">{successMessage}</span>
-          </div>
-        )}
-        {warningMessage && (
-          <div className="fixed bottom-6 right-6 bg-yellow-500 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center gap-3 animate-fade-in z-50">
-            <AlertTriangle className="w-5 h-5" />
-            <span className="font-medium">{warningMessage}</span>
-          </div>
-        )}
-        {error && (
-          <div className="fixed bottom-6 right-6 bg-red-500 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center gap-3 animate-fade-in z-50">
-            <XCircle className="w-5 h-5" />
-            <span className="font-medium">{error}</span>
-          </div>
-        )}
+        {/* 🔔 NOTIFIKASI STACK — kanan atas, slide-down */}
+        <div className="fixed top-6 right-6 z-50 space-y-3 w-80 max-w-[90vw] pointer-events-none">
+          {notifications.map((notif) => {
+            const bgColor =
+              notif.type === "success"
+                ? "bg-green-500"
+                : notif.type === "warning"
+                ? "bg-yellow-500"
+                : "bg-red-500";
+            const Icon = notif.type === "success" ? CheckCircle : notif.type === "warning" ? AlertTriangle : XCircle;
+
+            return (
+              <div
+                key={notif.id}
+                className={`${bgColor} text-white p-4 rounded-xl shadow-lg flex items-start gap-3 pointer-events-auto animate-slide-down`}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="text-sm font-medium">{notif.message}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

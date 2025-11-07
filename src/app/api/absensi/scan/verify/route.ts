@@ -40,19 +40,33 @@ export async function POST(req: Request) {
       );
     }
 
-    // Periksa apakah sudah ada absensi hari ini untuk siswa ini
-    const today = new Date();
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+    // Periksa apakah sudah ada absensi untuk tanggal yang dipilih (atau hari ini jika tidak diberikan)
+    let tanggalAbsensi: Date;
+    if (body.tanggal && typeof body.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.tanggal)) {
+      const [y, m, d] = body.tanggal.split("-").map(Number);
+      // use UTC midnight so queries match stored DATE values
+      tanggalAbsensi = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+    } else {
+      const now = new Date();
+      tanggalAbsensi = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    }
+
+    if (isNaN(tanggalAbsensi.getTime())) {
+      const now = new Date();
+      tanggalAbsensi = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    }
+
+    const startOfDay = new Date(Date.UTC(tanggalAbsensi.getUTCFullYear(), tanggalAbsensi.getUTCMonth(), tanggalAbsensi.getUTCDate(), 0, 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(tanggalAbsensi.getUTCFullYear(), tanggalAbsensi.getUTCMonth(), tanggalAbsensi.getUTCDate(), 23, 59, 59, 999));
 
     const existingAbsensi = await prisma.absensi.findFirst({
       where: {
         id_siswa: siswa.NIS,
         tanggal: {
           gte: startOfDay,
-          lt: endOfDay
-        }
-      }
+          lt: endOfDay,
+        },
+      },
     });
 
     if (existingAbsensi) {
